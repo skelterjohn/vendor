@@ -131,6 +131,8 @@ func restoreGit(path string, repo GitRepo) {
 		os.Stderr.Write(errBuf.Bytes())
 		return
 	}
+
+	fmt.Fprint(os.Stdout, path+"\n")
 }
 
 func saveGit(path string) (GitRepo, error) {
