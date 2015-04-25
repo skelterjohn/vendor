@@ -64,7 +64,6 @@ func doSave(dir, cfgPath string) {
 				fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 			} else {
 				cfg.GitRepos[path] = gr
-				fmt.Fprint(os.Stdout, path+"\n")
 			}
 			return filepath.SkipDir
 		}
