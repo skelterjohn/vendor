@@ -64,6 +64,7 @@ func doSave(dir, cfgPath string) {
 				fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 			} else {
 				cfg.GitRepos[path] = gr
+				fmt.Fprint(os.Stdout, path+"\n")
 			}
 			return filepath.SkipDir
 		}
@@ -104,7 +105,9 @@ func doRestore(dir, cfgPath string) {
 		repoPath := filepath.Join(dir, path)
 		wg.Add(1)
 		go func() {
-			restoreGit(repoPath, gitRepo)
+			if restoreGit(repoPath, gitRepo) {
+				fmt.Fprint(os.Stdout, path+"\n")
+			}
 			wg.Done()
 		}()
 	}
@@ -112,7 +115,7 @@ func doRestore(dir, cfgPath string) {
 	wg.Wait()
 }
 
-func restoreGit(path string, repo GitRepo) {
+func restoreGit(path string, repo GitRepo) bool {
 	var errBuf bytes.Buffer
 	fmt.Fprintf(&errBuf, "restoring %q:\n", path)
 	cmd := exec.Command("git", "clone", repo.URI, path)
@@ -120,7 +123,7 @@ func restoreGit(path string, repo GitRepo) {
 	cmd.Stderr = &errBuf
 	if cmd.Run() != nil {
 		os.Stderr.Write(errBuf.Bytes())
-		return
+		return false
 	}
 
 	cmd = exec.Command("git", "reset", "--hard", repo.Ref)
@@ -129,10 +132,10 @@ func restoreGit(path string, repo GitRepo) {
 	cmd.Stderr = &errBuf
 	if cmd.Run() != nil {
 		os.Stderr.Write(errBuf.Bytes())
-		return
+		return false
 	}
 
-	fmt.Fprint(os.Stdout, path+"\n")
+	return true
 }
 
 func saveGit(path string) (GitRepo, error) {
