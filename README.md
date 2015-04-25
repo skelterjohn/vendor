@@ -1,6 +1,8 @@
 # vendor
 Tool for vendoring repositories.
 
+Currently only supports git.
+
 ```
 Usage: vendor [-d DIR] -s -|CONFIG  # save
        vendor [-d DIR] -r -|CONFIG  # restore
