@@ -82,7 +82,7 @@ func orExit(err error) {
 
 func saveRepo(cfg *Config, path string, repoPath string) error {
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
-		return err
+		return nil
 	}
 	if gr, err := saveGit(repoPath); err != nil {
 		return err
