@@ -144,15 +144,19 @@ func doRestore(dir, cfgPath string) {
 
 	wg := sync.WaitGroup{}
 
-	for path, gitRepo := range cfg.GitRepos {
+	for path := range cfg.GitRepos {
 		repoPath := filepath.Join(dir, path)
+		os.RemoveAll(repoPath)
+	}
+	for path, gitRepo := range cfg.GitRepos {
 		wg.Add(1)
-		go func() {
+		go func(path string, gitRepo GitRepo) {
+			repoPath := filepath.Join(dir, path)
 			if restoreGit(repoPath, gitRepo) {
 				fmt.Fprint(os.Stdout, path+"\n")
 			}
 			wg.Done()
-		}()
+		}(path, gitRepo)
 	}
 
 	wg.Wait()
