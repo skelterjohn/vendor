@@ -24,25 +24,52 @@ type GitRepo struct {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: vendor [-d DIR] -s -|CONFIG  # save\n")
+	fmt.Fprintf(os.Stderr, "Usage: vendor [-d DIR] -s [-a REPO=PATH]* -|CONFIG  # save\n")
 	fmt.Fprintf(os.Stderr, "       vendor [-d DIR] -r -|CONFIG  # restore\n")
 	os.Exit(1)
 }
 
 func main() {
-	dir := flag.String("d", ".", "directory to vendor into")
-	save := flag.Bool("s", false, "save the repos and revisions")
-	restore := flag.Bool("r", false, "restore the repos and revisions")
-	flag.Parse()
-	if flag.NArg() != 1 || *save == *restore {
+	fs := flag.NewFlagSet("vendor", flag.ExitOnError)
+	dir := fs.String("d", ".", "directory to vendor into")
+	save := fs.Bool("s", false, "save the repos and revisions")
+	restore := fs.Bool("r", false, "restore the repos and revisions")
+
+	var args, addons []string
+	isMaybeSave := false
+	isAddon := false
+	for _, arg := range os.Args[1:] {
+		if isAddon {
+			addons = append(addons, arg)
+			isAddon = false
+			continue
+		}
+		switch arg {
+		case "-s":
+			isMaybeSave = true
+			args = append(args, arg)
+		case "-a":
+			if !isMaybeSave {
+				args = append(args, arg)
+			} else {
+				isAddon = true
+			}
+		default:
+			args = append(args, arg)
+		}
+
+	}
+
+	fs.Parse(args)
+	if fs.NArg() != 1 || *save == *restore {
 		usage()
 	}
 
 	if *save {
-		doSave(*dir, flag.Arg(0))
+		doSave(*dir, fs.Arg(0), addons)
 	}
 	if *restore {
-		doRestore(*dir, flag.Arg(0))
+		doRestore(*dir, fs.Arg(0))
 	}
 }
 
@@ -53,23 +80,40 @@ func orExit(err error) {
 	}
 }
 
-func doSave(dir, cfgPath string) {
+func saveRepo(cfg *Config, path string, repoPath string) error {
+	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
+		return err
+	}
+	if gr, err := saveGit(repoPath); err != nil {
+		return err
+	} else {
+		cfg.GitRepos[path] = gr
+	}
+	return nil
+}
+
+func doSave(dir, cfgPath string, addons []string) {
 	cfg := Config{
 		GitRepos: map[string]GitRepo{},
 	}
 
 	scanDir := func(path string, info os.FileInfo, err error) error {
-		if _, serr := os.Stat(filepath.Join(path, ".git")); serr == nil {
-			if gr, err := saveGit(path); err != nil {
-				fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
-			} else {
-				cfg.GitRepos[path] = gr
-			}
+		if err := saveRepo(&cfg, path, path); err == nil {
 			return filepath.SkipDir
+		} else {
+			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 		}
 		return nil
 	}
 	orExit(filepath.Walk(dir, scanDir))
+
+	for _, addon := range addons {
+		tokens := strings.Split(addon, "=")
+		path, repoPath := tokens[0], tokens[1]
+		if err := saveRepo(&cfg, path, repoPath); err != nil {
+			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
+		}
+	}
 
 	var out io.Writer
 	if cfgPath == "-" {
