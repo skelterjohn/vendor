@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -24,8 +23,8 @@ type GitRepo struct {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: vendor [-d DIR] -s [-a REPO=PATH]* -|CONFIG  # save\n")
-	fmt.Fprintf(os.Stderr, "       vendor [-d DIR] -r -|CONFIG  # restore\n")
+	fmt.Fprintf(os.Stderr, "Usage: vendor [-d DIR] -s [-a REPO=PATH]* CONFIG  # save\n")
+	fmt.Fprintf(os.Stderr, "       vendor [-d DIR] -r CONFIG                  # restore\n")
 	os.Exit(1)
 }
 
@@ -82,12 +81,14 @@ func orExit(err error) {
 
 func saveRepo(cfg *Config, path string, repoPath string) error {
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
-		return nil
+		return err
 	}
 	if gr, err := saveGit(repoPath); err != nil {
+		fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 		return err
 	} else {
 		cfg.GitRepos[path] = gr
+		fmt.Println(path)
 	}
 	return nil
 }
@@ -100,8 +101,6 @@ func doSave(dir, cfgPath string, addons []string) {
 	scanDir := func(path string, info os.FileInfo, err error) error {
 		if err := saveRepo(&cfg, path, path); err == nil {
 			return filepath.SkipDir
-		} else {
-			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 		}
 		return nil
 	}
@@ -110,19 +109,11 @@ func doSave(dir, cfgPath string, addons []string) {
 	for _, addon := range addons {
 		tokens := strings.Split(addon, "=")
 		path, repoPath := tokens[0], tokens[1]
-		if err := saveRepo(&cfg, path, repoPath); err != nil {
-			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
-		}
+		saveRepo(&cfg, path, repoPath)
 	}
 
-	var out io.Writer
-	if cfgPath == "-" {
-		out = os.Stdout
-	} else {
-		var err error
-		out, err = os.Create(cfgPath)
-		orExit(err)
-	}
+	out, err := os.Create(cfgPath)
+	orExit(err)
 	var buf bytes.Buffer
 	orExit(json.NewEncoder(&buf).Encode(&cfg))
 	var indented bytes.Buffer
@@ -131,14 +122,8 @@ func doSave(dir, cfgPath string, addons []string) {
 }
 
 func doRestore(dir, cfgPath string) {
-	var in io.Reader
-	if cfgPath == "-" {
-		in = os.Stdin
-	} else {
-		var err error
-		in, err = os.Open(cfgPath)
-		orExit(err)
-	}
+	in, err := os.Open(cfgPath)
+	orExit(err)
 	var cfg Config
 	orExit(json.NewDecoder(in).Decode(&cfg))
 
