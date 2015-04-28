@@ -99,6 +99,10 @@ func doSave(dir, cfgPath string, addons []string) {
 	}
 
 	scanDir := func(path string, info os.FileInfo, err error) error {
+		// don't vendor the root, that'd be pointless
+		if path == "." {
+			return nil
+		}
 		if err := saveRepo(&cfg, path, path); err == nil {
 			return filepath.SkipDir
 		}
