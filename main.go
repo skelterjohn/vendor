@@ -66,13 +66,19 @@ func main() {
 
 	}
 
+	ignored := map[string]bool{}
+	ignoredStr := os.Getenv("VENDOR_IGNORE_DIRS")
+	for _, ignore := range strings.Split(ignoredStr, string(filepath.ListSeparator)) {
+		ignored[ignore] = true
+	}
+
 	fs.Parse(args)
 	if fs.NArg() != 1 || *save == *restore {
 		usage()
 	}
 
 	if *save {
-		doSave(*dir, fs.Arg(0), addons)
+		doSave(*dir, fs.Arg(0), addons, ignored)
 	}
 	if *restore {
 		doRestore(*dir, fs.Arg(0))
@@ -110,7 +116,7 @@ func saveRepo(wg *sync.WaitGroup, cfg, oldCfg *Config, path string, repoPath str
 	return nil
 }
 
-func doSave(dir, cfgPath string, addons []string) {
+func doSave(dir, cfgPath string, addons []string, ignored map[string]bool) {
 	cfg := Config{
 		GitRepos:       map[string]GitRepo{},
 		MercurialRepos: map[string]HgRepo{},
@@ -128,6 +134,10 @@ func doSave(dir, cfgPath string, addons []string) {
 		if path == "." {
 			return nil
 		}
+		if ignored[path] {
+			return filepath.SkipDir
+		}
+		fmt.Println(path)
 		if err := saveRepo(&wg, &cfg, &oldCfg, path, path); err != nil {
 			return err
 		}
