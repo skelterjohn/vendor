@@ -137,7 +137,6 @@ func doSave(dir, cfgPath string, addons []string, ignored map[string]bool) {
 		if ignored[path] {
 			return filepath.SkipDir
 		}
-		fmt.Println(path)
 		if err := saveRepo(&wg, &cfg, &oldCfg, path, path); err != nil {
 			return err
 		}
