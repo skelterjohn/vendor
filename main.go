@@ -85,14 +85,16 @@ func orExit(err error) {
 	}
 }
 
-func saveRepo(cfg *Config, path string, repoPath string) error {
+func saveRepo(cfg, oldCfg *Config, path string, repoPath string) error {
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
 		if gr, err := saveGit(repoPath); err != nil {
 			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 			return err
 		} else {
 			cfg.GitRepos[path] = gr
-			fmt.Println(path)
+			if oldGr, _ := oldCfg.GitRepos[path]; gr != oldGr {
+				fmt.Println(path)
+			}
 		}
 		return filepath.SkipDir
 	}
@@ -102,7 +104,9 @@ func saveRepo(cfg *Config, path string, repoPath string) error {
 			return err
 		} else {
 			cfg.MercurialRepos[path] = hr
-			fmt.Println(path)
+			if oldHr, _ := oldCfg.MercurialRepos[path]; hr != oldHr {
+				fmt.Println(path)
+			}
 		}
 		return filepath.SkipDir
 	}
@@ -115,12 +119,17 @@ func doSave(dir, cfgPath string, addons []string) {
 		MercurialRepos: map[string]HgRepo{},
 	}
 
+	var oldCfg Config
+	if in, err := os.Open(cfgPath); err == nil {
+		_ = json.NewDecoder(in).Decode(&oldCfg)
+	}
+
 	scanDir := func(path string, info os.FileInfo, err error) error {
 		// don't vendor the root, that'd be pointless
 		if path == "." {
 			return nil
 		}
-		if err := saveRepo(&cfg, path, path); err != nil {
+		if err := saveRepo(&cfg, &oldCfg, path, path); err != nil {
 			return err
 		}
 		return nil
@@ -130,7 +139,7 @@ func doSave(dir, cfgPath string, addons []string) {
 	for _, addon := range addons {
 		tokens := strings.Split(addon, "=")
 		path, repoPath := tokens[0], tokens[1]
-		saveRepo(&cfg, path, repoPath)
+		saveRepo(&cfg, &oldCfg, path, repoPath)
 	}
 
 	out, err := os.Create(cfgPath)
