@@ -16,6 +16,7 @@ import (
 type Config struct {
 	GitRepos       map[string]GitRepo
 	MercurialRepos map[string]HgRepo
+	sync.Mutex
 }
 
 type GitRepo struct {
@@ -85,29 +86,25 @@ func orExit(err error) {
 	}
 }
 
-func saveRepo(cfg, oldCfg *Config, path string, repoPath string) error {
+func saveRepo(wg *sync.WaitGroup, cfg, oldCfg *Config, path string, repoPath string) error {
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
-		if gr, err := saveGit(repoPath); err != nil {
-			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
-			return err
-		} else {
-			cfg.GitRepos[path] = gr
-			if oldGr, _ := oldCfg.GitRepos[path]; gr != oldGr {
-				fmt.Println(path)
+		wg.Add(1)
+		go func() {
+			if err := saveGit(cfg, oldCfg, repoPath); err != nil {
+				fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 			}
-		}
+			wg.Done()
+		}()
 		return filepath.SkipDir
 	}
 	if _, err := os.Stat(filepath.Join(repoPath, ".hg")); err == nil {
-		if hr, err := saveMercurial(repoPath); err != nil {
-			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
-			return err
-		} else {
-			cfg.MercurialRepos[path] = hr
-			if oldHr, _ := oldCfg.MercurialRepos[path]; hr != oldHr {
-				fmt.Println(path)
+		wg.Add(1)
+		go func() {
+			if err := saveMercurial(cfg, oldCfg, repoPath); err != nil {
+				fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 			}
-		}
+			wg.Done()
+		}()
 		return filepath.SkipDir
 	}
 	return nil
@@ -124,12 +121,14 @@ func doSave(dir, cfgPath string, addons []string) {
 		_ = json.NewDecoder(in).Decode(&oldCfg)
 	}
 
+	var wg sync.WaitGroup
+
 	scanDir := func(path string, info os.FileInfo, err error) error {
 		// don't vendor the root, that'd be pointless
 		if path == "." {
 			return nil
 		}
-		if err := saveRepo(&cfg, &oldCfg, path, path); err != nil {
+		if err := saveRepo(&wg, &cfg, &oldCfg, path, path); err != nil {
 			return err
 		}
 		return nil
@@ -139,8 +138,10 @@ func doSave(dir, cfgPath string, addons []string) {
 	for _, addon := range addons {
 		tokens := strings.Split(addon, "=")
 		path, repoPath := tokens[0], tokens[1]
-		saveRepo(&cfg, &oldCfg, path, repoPath)
+		saveRepo(&wg, &cfg, &oldCfg, path, repoPath)
 	}
+
+	wg.Wait()
 
 	out, err := os.Create(cfgPath)
 	orExit(err)
@@ -233,14 +234,14 @@ func restoreGit(path string, repo GitRepo) bool {
 	return resetHard(true)
 }
 
-func saveGit(path string) (GitRepo, error) {
+func saveGit(cfg, oldCfg *Config, path string) error {
 	//git rev-parse HEAD
 	gr := GitRepo{}
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Stderr = os.Stderr
 	cmd.Dir = path
 	if output, err := cmd.Output(); err != nil {
-		return gr, err
+		return err
 	} else {
 		gr.Ref = strings.TrimSpace(string(output))
 	}
@@ -248,11 +249,19 @@ func saveGit(path string) (GitRepo, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Dir = path
 	if output, err := cmd.Output(); err != nil {
-		return gr, err
+		return err
 	} else {
 		gr.URI = strings.TrimSpace(string(output))
 	}
-	return gr, nil
+
+	cfg.Lock()
+	cfg.GitRepos[path] = gr
+	cfg.Unlock()
+	if oldGr, _ := oldCfg.GitRepos[path]; gr != oldGr {
+		fmt.Println(path)
+	}
+
+	return nil
 }
 
 func restoreMercurial(path string, repo HgRepo) bool {
@@ -289,14 +298,14 @@ func restoreMercurial(path string, repo HgRepo) bool {
 	return true
 }
 
-func saveMercurial(path string) (HgRepo, error) {
+func saveMercurial(cfg, oldCfg *Config, path string) error {
 	//git rev-parse HEAD
 	hr := HgRepo{}
 	cmd := exec.Command("hg", "id", "-i")
 	cmd.Stderr = os.Stderr
 	cmd.Dir = path
 	if output, err := cmd.Output(); err != nil {
-		return hr, err
+		return err
 	} else {
 		hr.Ref = strings.TrimSpace(string(output))
 	}
@@ -304,9 +313,17 @@ func saveMercurial(path string) (HgRepo, error) {
 	cmd.Stderr = os.Stderr
 	cmd.Dir = path
 	if output, err := cmd.Output(); err != nil {
-		return hr, err
+		return err
 	} else {
 		hr.URI = strings.TrimSpace(string(output))
 	}
-	return hr, nil
+
+	cfg.Lock()
+	cfg.MercurialRepos[path] = hr
+	cfg.Unlock()
+	if oldHr, _ := oldCfg.MercurialRepos[path]; hr != oldHr {
+		fmt.Println(path)
+	}
+
+	return nil
 }
