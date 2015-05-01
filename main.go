@@ -133,10 +133,6 @@ func doRestore(dir, cfgPath string) {
 
 	wg := sync.WaitGroup{}
 
-	for path := range cfg.GitRepos {
-		repoPath := filepath.Join(dir, path)
-		os.RemoveAll(repoPath)
-	}
 	for path, gitRepo := range cfg.GitRepos {
 		wg.Add(1)
 		go func(path string, gitRepo GitRepo) {
@@ -152,9 +148,44 @@ func doRestore(dir, cfgPath string) {
 }
 
 func restoreGit(path string, repo GitRepo) bool {
+	resetHard := func(printErr bool) bool {
+		cmd := exec.Command("git", "reset", "--hard", repo.Ref)
+		cmd.Dir = path
+		cmd.Stdout = ioutil.Discard
+		var errBuf bytes.Buffer
+		if printErr {
+			cmd.Stderr = &errBuf
+		} else {
+			cmd.Stderr = ioutil.Discard
+		}
+		if cmd.Run() != nil {
+			if printErr {
+				os.Stderr.Write(errBuf.Bytes())
+			}
+			return false
+		}
+		return true
+	}
+
+	// check if it's up to date
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Stderr = os.Stderr
+	cmd.Dir = path
+	if output, err := cmd.Output(); err == nil {
+		ref := strings.TrimSpace(string(output))
+		if repo.Ref == ref {
+			return false
+		}
+		if resetHard(false) {
+			return true
+		}
+	}
+
+	os.RemoveAll(path)
+
 	var errBuf bytes.Buffer
 	fmt.Fprintf(&errBuf, "restoring %q:\n", path)
-	cmd := exec.Command("git", "clone", repo.URI, path)
+	cmd = exec.Command("git", "clone", repo.URI, path)
 	cmd.Stdout = ioutil.Discard
 	cmd.Stderr = &errBuf
 	if cmd.Run() != nil {
@@ -162,16 +193,7 @@ func restoreGit(path string, repo GitRepo) bool {
 		return false
 	}
 
-	cmd = exec.Command("git", "reset", "--hard", repo.Ref)
-	cmd.Dir = path
-	cmd.Stdout = ioutil.Discard
-	cmd.Stderr = &errBuf
-	if cmd.Run() != nil {
-		os.Stderr.Write(errBuf.Bytes())
-		return false
-	}
-
-	return true
+	return resetHard(true)
 }
 
 func saveGit(path string) (GitRepo, error) {
