@@ -14,10 +14,16 @@ import (
 )
 
 type Config struct {
-	GitRepos map[string]GitRepo
+	GitRepos       map[string]GitRepo
+	MercurialRepos map[string]HgRepo
 }
 
 type GitRepo struct {
+	URI string
+	Ref string
+}
+
+type HgRepo struct {
 	URI string
 	Ref string
 }
@@ -80,22 +86,33 @@ func orExit(err error) {
 }
 
 func saveRepo(cfg *Config, path string, repoPath string) error {
-	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
-		return err
+	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
+		if gr, err := saveGit(repoPath); err != nil {
+			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
+			return err
+		} else {
+			cfg.GitRepos[path] = gr
+			fmt.Println(path)
+		}
+		return filepath.SkipDir
 	}
-	if gr, err := saveGit(repoPath); err != nil {
-		fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
-		return err
-	} else {
-		cfg.GitRepos[path] = gr
-		fmt.Println(path)
+	if _, err := os.Stat(filepath.Join(repoPath, ".hg")); err == nil {
+		if hr, err := saveMercurial(repoPath); err != nil {
+			fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
+			return err
+		} else {
+			cfg.MercurialRepos[path] = hr
+			fmt.Println(path)
+		}
+		return filepath.SkipDir
 	}
 	return nil
 }
 
 func doSave(dir, cfgPath string, addons []string) {
 	cfg := Config{
-		GitRepos: map[string]GitRepo{},
+		GitRepos:       map[string]GitRepo{},
+		MercurialRepos: map[string]HgRepo{},
 	}
 
 	scanDir := func(path string, info os.FileInfo, err error) error {
@@ -103,8 +120,8 @@ func doSave(dir, cfgPath string, addons []string) {
 		if path == "." {
 			return nil
 		}
-		if err := saveRepo(&cfg, path, path); err == nil {
-			return filepath.SkipDir
+		if err := saveRepo(&cfg, path, path); err != nil {
+			return err
 		}
 		return nil
 	}
@@ -142,6 +159,17 @@ func doRestore(dir, cfgPath string) {
 			}
 			wg.Done()
 		}(path, gitRepo)
+	}
+
+	for path, hgRepo := range cfg.MercurialRepos {
+		wg.Add(1)
+		go func(path string, hgRepo HgRepo) {
+			repoPath := filepath.Join(dir, path)
+			if restoreMercurial(repoPath, hgRepo) {
+				fmt.Fprint(os.Stdout, path+"\n")
+			}
+			wg.Done()
+		}(path, hgRepo)
 	}
 
 	wg.Wait()
@@ -216,4 +244,60 @@ func saveGit(path string) (GitRepo, error) {
 		gr.URI = strings.TrimSpace(string(output))
 	}
 	return gr, nil
+}
+
+func restoreMercurial(path string, repo HgRepo) bool {
+	// check if it's up to date
+	cmd := exec.Command("hg", "id", "-i")
+	cmd.Stderr = os.Stderr
+	cmd.Dir = path
+	if output, err := cmd.Output(); err == nil {
+		ref := strings.TrimSpace(string(output))
+		if repo.Ref == ref {
+			return false
+		}
+		cmd := exec.Command("hg", "update", repo.Ref)
+		cmd.Dir = path
+		cmd.Stdout = ioutil.Discard
+		cmd.Stderr = ioutil.Discard
+		if cmd.Run() == nil {
+			return true
+		}
+	}
+
+	os.RemoveAll(path)
+
+	var errBuf bytes.Buffer
+	fmt.Fprintf(&errBuf, "restoring %q:\n", path)
+	cmd = exec.Command("hg", "clone", repo.URI, "-u", repo.Ref, path)
+	cmd.Stdout = ioutil.Discard
+	cmd.Stderr = &errBuf
+	if cmd.Run() != nil {
+		os.Stderr.Write(errBuf.Bytes())
+		return false
+	}
+
+	return true
+}
+
+func saveMercurial(path string) (HgRepo, error) {
+	//git rev-parse HEAD
+	hr := HgRepo{}
+	cmd := exec.Command("hg", "id", "-i")
+	cmd.Stderr = os.Stderr
+	cmd.Dir = path
+	if output, err := cmd.Output(); err != nil {
+		return hr, err
+	} else {
+		hr.Ref = strings.TrimSpace(string(output))
+	}
+	cmd = exec.Command("hg", "paths", "default")
+	cmd.Stderr = os.Stderr
+	cmd.Dir = path
+	if output, err := cmd.Output(); err != nil {
+		return hr, err
+	} else {
+		hr.URI = strings.TrimSpace(string(output))
+	}
+	return hr, nil
 }
