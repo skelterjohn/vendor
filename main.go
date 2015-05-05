@@ -96,7 +96,7 @@ func saveRepo(wg *sync.WaitGroup, cfg, oldCfg *Config, path string, repoPath str
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
 		wg.Add(1)
 		go func() {
-			if err := saveGit(cfg, oldCfg, repoPath); err != nil {
+			if err := saveGit(cfg, oldCfg, path, repoPath); err != nil {
 				fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 			}
 			wg.Done()
@@ -106,7 +106,7 @@ func saveRepo(wg *sync.WaitGroup, cfg, oldCfg *Config, path string, repoPath str
 	if _, err := os.Stat(filepath.Join(repoPath, ".hg")); err == nil {
 		wg.Add(1)
 		go func() {
-			if err := saveMercurial(cfg, oldCfg, repoPath); err != nil {
+			if err := saveMercurial(cfg, oldCfg, path, repoPath); err != nil {
 				fmt.Fprintf(os.Stderr, "%q: %s\n", path, err)
 			}
 			wg.Done()
@@ -243,12 +243,12 @@ func restoreGit(path string, repo GitRepo) bool {
 	return resetHard(true)
 }
 
-func saveGit(cfg, oldCfg *Config, path string) error {
+func saveGit(cfg, oldCfg *Config, path, repoPath string) error {
 	//git rev-parse HEAD
 	gr := GitRepo{}
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Stderr = os.Stderr
-	cmd.Dir = path
+	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err != nil {
 		return err
 	} else {
@@ -256,7 +256,7 @@ func saveGit(cfg, oldCfg *Config, path string) error {
 	}
 	cmd = exec.Command("git", "config", "--get", "remote.origin.url")
 	cmd.Stderr = os.Stderr
-	cmd.Dir = path
+	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err != nil {
 		return err
 	} else {
@@ -307,12 +307,12 @@ func restoreMercurial(path string, repo HgRepo) bool {
 	return true
 }
 
-func saveMercurial(cfg, oldCfg *Config, path string) error {
+func saveMercurial(cfg, oldCfg *Config, path, repoPath string) error {
 	//git rev-parse HEAD
 	hr := HgRepo{}
 	cmd := exec.Command("hg", "id", "-i")
 	cmd.Stderr = os.Stderr
-	cmd.Dir = path
+	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err != nil {
 		return err
 	} else {
@@ -320,7 +320,7 @@ func saveMercurial(cfg, oldCfg *Config, path string) error {
 	}
 	cmd = exec.Command("hg", "paths", "default")
 	cmd.Stderr = os.Stderr
-	cmd.Dir = path
+	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err != nil {
 		return err
 	} else {
