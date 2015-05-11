@@ -1,7 +1,7 @@
 # vendor
 Tool for vendoring repositories.
 
-Currently only supports git.
+Currently supports git and mercurial.
 
 ```
 Usage: vendor [-d DIR] -s [-a PATH=REPO]* CONFIG  # save
