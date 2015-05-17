@@ -207,17 +207,27 @@ func doSave(dir, cfgPath string, addons, rgits, rhgs []string, ignored map[strin
 	for path, newRepo := range cfg.GitRepos {
 		if oldRepo, ok := oldCfg.GitRepos[path]; !ok || newRepo != oldRepo {
 			fmt.Println(path)
-			fmt.Fprintf(os.Stderr, "%s -> %s\n", oldRepo.Ref, newRepo.Ref)
+			if oldRepo.Ref != "" {
+				fmt.Fprintf(os.Stderr, "%s -> %s\n", oldRepo.Ref, newRepo.Ref)
+			}
 		}
 	}
 	for path, newRepo := range cfg.MercurialRepos {
 		if oldRepo, ok := oldCfg.MercurialRepos[path]; !ok || newRepo != oldRepo {
 			fmt.Println(path)
-			fmt.Fprintf(os.Stderr, "%s -> %s\n", oldRepo.Ref, newRepo.Ref)
+			if oldRepo.Ref != "" {
+				fmt.Fprintf(os.Stderr, "%s -> %s\n", oldRepo.Ref, newRepo.Ref)
+			}
 		}
 	}
 
 	if extend {
+		if oldCfg.GitRepos == nil {
+			oldCfg.GitRepos = map[string]GitRepo{}
+		}
+		if oldCfg.MercurialRepos == nil {
+			oldCfg.MercurialRepos = map[string]HgRepo{}
+		}
 		for path, newRepo := range cfg.GitRepos {
 			oldCfg.GitRepos[path] = newRepo
 		}
