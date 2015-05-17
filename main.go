@@ -40,7 +40,8 @@ func main() {
 	dir := fs.String("d", ".", "directory to vendor into")
 	save := fs.Bool("s", false, "save the repos and revisions")
 	restore := fs.Bool("r", false, "restore the repos and revisions")
-	version := fs.Bool("v", false, "print version info")
+	version := fs.Bool("v", false, "print vendor version info")
+	extend := fs.Bool("x", false, "extend the existing config instead of overwriting it")
 
 	var args, addons, rgits, rhgs []string
 	isMaybeSave := false
@@ -98,7 +99,7 @@ func main() {
 	fs.Parse(args)
 
 	if *version {
-		fmt.Println("vendor build 2")
+		fmt.Println("vendor build 3")
 		os.Exit(0)
 	}
 
@@ -107,7 +108,7 @@ func main() {
 	}
 
 	if *save {
-		doSave(*dir, fs.Arg(0), addons, rgits, rhgs, ignored)
+		doSave(*dir, fs.Arg(0), addons, rgits, rhgs, ignored, *extend)
 	}
 	if *restore {
 		doRestore(*dir, fs.Arg(0))
@@ -145,7 +146,7 @@ func saveRepo(wg *sync.WaitGroup, cfg, oldCfg *Config, path string, repoPath str
 	return nil
 }
 
-func doSave(dir, cfgPath string, addons, rgits, rhgs []string, ignored map[string]bool) {
+func doSave(dir, cfgPath string, addons, rgits, rhgs []string, ignored map[string]bool, extend bool) {
 	cfg := Config{
 		GitRepos:       map[string]GitRepo{},
 		MercurialRepos: map[string]HgRepo{},
@@ -206,12 +207,24 @@ func doSave(dir, cfgPath string, addons, rgits, rhgs []string, ignored map[strin
 	for path, newRepo := range cfg.GitRepos {
 		if oldRepo, ok := oldCfg.GitRepos[path]; !ok || newRepo != oldRepo {
 			fmt.Println(path)
+			fmt.Fprintf(os.Stderr, "%s -> %s\n", oldRepo.Ref, newRepo.Ref)
 		}
 	}
 	for path, newRepo := range cfg.MercurialRepos {
 		if oldRepo, ok := oldCfg.MercurialRepos[path]; !ok || newRepo != oldRepo {
 			fmt.Println(path)
+			fmt.Fprintf(os.Stderr, "%s -> %s\n", oldRepo.Ref, newRepo.Ref)
 		}
+	}
+
+	if extend {
+		for path, newRepo := range cfg.GitRepos {
+			oldCfg.GitRepos[path] = newRepo
+		}
+		for path, newRepo := range cfg.MercurialRepos {
+			oldCfg.MercurialRepos[path] = newRepo
+		}
+		cfg = oldCfg
 	}
 
 	out, err := os.Create(cfgPath)
@@ -369,7 +382,7 @@ func restoreMercurial(path string, repo HgRepo) bool {
 func saveMercurial(cfg, oldCfg *Config, path, repoPath string) error {
 	//git rev-parse HEAD
 	hr := HgRepo{}
-	cmd := exec.Command("hg", "id", "-i")
+	cmd := exec.Command("hg", "--debug", "id", "-i")
 	cmd.Stderr = os.Stderr
 	cmd.Dir = repoPath
 	if output, err := cmd.Output(); err != nil {
