@@ -40,14 +40,25 @@ func main() {
 	dir := fs.String("d", ".", "directory to vendor into")
 	save := fs.Bool("s", false, "save the repos and revisions")
 	restore := fs.Bool("r", false, "restore the repos and revisions")
+	version := fs.Bool("v", false, "print version info")
 
-	var args, addons []string
+	var args, addons, rgits, rhgs []string
 	isMaybeSave := false
-	isAddon := false
+	var isAddon, isGit, isHg bool
 	for _, arg := range os.Args[1:] {
 		if isAddon {
 			addons = append(addons, arg)
 			isAddon = false
+			continue
+		}
+		if isGit {
+			rgits = append(rgits, arg)
+			isGit = false
+			continue
+		}
+		if isHg {
+			rhgs = append(rhgs, arg)
+			isHg = false
 			continue
 		}
 		switch arg {
@@ -59,6 +70,18 @@ func main() {
 				args = append(args, arg)
 			} else {
 				isAddon = true
+			}
+		case "-rgit":
+			if !isMaybeSave {
+				args = append(args, arg)
+			} else {
+				isGit = true
+			}
+		case "-rhg":
+			if !isMaybeSave {
+				args = append(args, arg)
+			} else {
+				isHg = true
 			}
 		default:
 			args = append(args, arg)
@@ -73,12 +96,18 @@ func main() {
 	}
 
 	fs.Parse(args)
+
+	if *version {
+		fmt.Println("vendor build 2")
+		os.Exit(0)
+	}
+
 	if fs.NArg() != 1 || *save == *restore {
 		usage()
 	}
 
 	if *save {
-		doSave(*dir, fs.Arg(0), addons, ignored)
+		doSave(*dir, fs.Arg(0), addons, rgits, rhgs, ignored)
 	}
 	if *restore {
 		doRestore(*dir, fs.Arg(0))
@@ -116,7 +145,7 @@ func saveRepo(wg *sync.WaitGroup, cfg, oldCfg *Config, path string, repoPath str
 	return nil
 }
 
-func doSave(dir, cfgPath string, addons []string, ignored map[string]bool) {
+func doSave(dir, cfgPath string, addons, rgits, rhgs []string, ignored map[string]bool) {
 	cfg := Config{
 		GitRepos:       map[string]GitRepo{},
 		MercurialRepos: map[string]HgRepo{},
@@ -151,6 +180,39 @@ func doSave(dir, cfgPath string, addons []string, ignored map[string]bool) {
 	}
 
 	wg.Wait()
+
+	for _, rgit := range rgits {
+		tokens := strings.Split(rgit, "=")
+		path, reporev := tokens[0], tokens[1]
+		tokens = strings.Split(reporev, "@")
+		repo, rev := tokens[0], tokens[1]
+		cfg.GitRepos[path] = GitRepo{
+			URI: repo,
+			Ref: rev,
+		}
+	}
+
+	for _, rhg := range rhgs {
+		tokens := strings.Split(rhg, "=")
+		path, reporev := tokens[0], tokens[1]
+		tokens = strings.Split(reporev, "@")
+		repo, rev := tokens[0], tokens[1]
+		cfg.MercurialRepos[path] = HgRepo{
+			URI: repo,
+			Ref: rev,
+		}
+	}
+
+	for path, newRepo := range cfg.GitRepos {
+		if oldRepo, ok := oldCfg.GitRepos[path]; !ok || newRepo != oldRepo {
+			fmt.Println(path)
+		}
+	}
+	for path, newRepo := range cfg.MercurialRepos {
+		if oldRepo, ok := oldCfg.MercurialRepos[path]; !ok || newRepo != oldRepo {
+			fmt.Println(path)
+		}
+	}
 
 	out, err := os.Create(cfgPath)
 	orExit(err)
@@ -266,9 +328,6 @@ func saveGit(cfg, oldCfg *Config, path, repoPath string) error {
 	cfg.Lock()
 	cfg.GitRepos[path] = gr
 	cfg.Unlock()
-	if oldGr, _ := oldCfg.GitRepos[path]; gr != oldGr {
-		fmt.Println(path)
-	}
 
 	return nil
 }
@@ -330,9 +389,6 @@ func saveMercurial(cfg, oldCfg *Config, path, repoPath string) error {
 	cfg.Lock()
 	cfg.MercurialRepos[path] = hr
 	cfg.Unlock()
-	if oldHr, _ := oldCfg.MercurialRepos[path]; hr != oldHr {
-		fmt.Println(path)
-	}
 
 	return nil
 }
