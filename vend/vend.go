@@ -78,7 +78,11 @@ func Save(dir, cfgPath string, addons, rgits, rhgs []string, ignored map[string]
 
 	var wg sync.WaitGroup
 
-	scanDir := func(path string, info os.FileInfo, err error) error {
+	scanDir := func(wpath string, info os.FileInfo, err error) error {
+		path, err := filepath.Rel(dir, wpath)
+		if err != nil {
+			return err
+		}
 		// don't vendor the root, that'd be pointless
 		if path == "." {
 			return nil
